@@ -122,12 +122,12 @@ def extract_all_listings():
     return vals
     
     
-def store_df_firebase(collection_name):
+def store_df_firebase():
     # Find the credential file to your firebase storage
     cred = credentials.Certificate('rental-property-dataset-firebase-credentials.json')
     
     # Intializes a firebase app to perform crud operations on your firebase storage
-    app = firebase_admin.initialize_app(cred)
+#     app = firebase_admin.initialize_app(cred)
     
     # Intializes the database object to add collections to your database
     db = firestore.client()
@@ -146,7 +146,7 @@ def store_df_firebase(collection_name):
     for record in data: 
         # Create a collection by passing a collection name. 
         # Creates a unique identifier for each document from each property name in the dataset.
-        doc_ref = db.collection(collection_name).document(record['Property_Name'])
+        doc_ref = db.collection("Properties_In_Bali").document(record['Property_Name'])
         
         # Adds all the data contained in the dictionaries from the data list.
         doc_ref.set(record)
@@ -156,4 +156,43 @@ def store_df_firebase(collection_name):
     # Delete the firebase app because you are no longer using the intialized firebase app. 
     # If we keep the same firebase app running, it will lead to an intialized app error when we are running 
     # the method multiple times. 
+#     firebase_admin.delete_app(app)
+
+def read_collection_firebase_data():
+    # Find the credential file to your firebase storage
+    cred = credentials.Certificate('rental-property-dataset-firebase-credentials.json')
+
+    # Intializes a firebase app to perform crud operations on your firebase storage
+    app = firebase_admin.initialize_app(cred)
+
+    # Intializes the database object to add collections to your database
+    db = firestore.client()
+    
+    # Create the list to store dictionaries
+    list_of_docs = []
+    
+    #Extracting the collection by title 
+    doc_ref = db.collection("Properties_In_Bali")
+
+    # Converting the collection into a stream
+    docs = doc_ref.stream()
+
+    # Checks if the stream list is null. 
+    if bool(docs) == False:
+            print("Document does not exist.")
+    
+    # Runs the following code when db is not null
+    else:
+        # The for loop loop through the docs list 
+            for doc in docs:
+                # Append the each doc as a dictionary into a list 
+                list_of_docs.append(doc.to_dict())
+
+    # Convert the list of dictionaries into a dataframe
+    df = pd.DataFrame(list_of_docs)
+
+    # Delete the firebase app because you are no longer using the intialized firebase app. 
     firebase_admin.delete_app(app)
+    
+def main():
+    store_df_firebase()
