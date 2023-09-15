@@ -7,6 +7,7 @@ from firebase_admin import credentials
 from firebase_admin import firestore
 pd.set_option('display.max_rows', None)
 from joblib import Parallel, delayed
+from babel.numbers import format_currency
 
 # Methods to Scrape Data from the AirBNB Website.
 def get_urls(first_page_url):
@@ -26,7 +27,7 @@ def get_urls(first_page_url):
     # Use a loop from 1 to 14 to loop through all the different listing pages. 
     for i in range(1,15):
         # Use the beautiful soup find function to get the links from the Next symbol html tag.
-        np = soup.find('a', class_ = "l1ovpqvx c1ytbx3a dir dir-ltr").get("href")
+        np = soup.find('a', attrs={"aria-label":"Next"} ).get("href")
         
         #create a new link with AirBNB.com as the host and concatenate the next page link.
         cnp = "https://www.airbnb.com" + np
@@ -98,8 +99,9 @@ def extract_listings(first_page_url,location):
         if 'Rp' in p: 
             # Appending all the price Rp valuse to the prices list
             Prices.append(p)
-        elif 'originally' in p:
-            substring_after(p, 'originally')
+    
+    Prices = [substring_after(p, ', originally') if ', originally' in p else p for p in Prices]
+    Prices = [price.replace(' per night','') if  ' per night' in price else price for price in Prices]
     
     # Creating a new pandas df object and storing all of the data in the Names, Prices, and Desc list in the df.
     bnb_df = pd.DataFrame({'Property_Name':Names, 'Price/Night': Prices, "Property_Description":Desc})
@@ -122,19 +124,19 @@ def extract_all_listings():
     return vals
     
     
-def store_df_firebase():
+def store_df_firebase(df):
     # Find the credential file to your firebase storage
     cred = credentials.Certificate('rental-property-dataset-firebase-credentials.json')
     
     # Intializes a firebase app to perform crud operations on your firebase storage
-#     app = firebase_admin.initialize_app(cred)
+    app = firebase_admin.initialize_app(cred)
     
     # Intializes the database object to add collections to your database
     db = firestore.client()
     
     # The extract listings method scrapes data from all AirBNB listings from the give link
     # and returns a pandas df containing all the scraped information.
-    data = extract_all_listings()   
+    data = df 
     
     # Convert all the values in the dataframe to strings because after scraping all the values are objects.
     data = data.astype('string')
@@ -156,7 +158,7 @@ def store_df_firebase():
     # Delete the firebase app because you are no longer using the intialized firebase app. 
     # If we keep the same firebase app running, it will lead to an intialized app error when we are running 
     # the method multiple times. 
-#     firebase_admin.delete_app(app)
+    firebase_admin.delete_app(app)
 
 def read_collection_firebase_data():
     # Find the credential file to your firebase storage
@@ -193,6 +195,61 @@ def read_collection_firebase_data():
 
     # Delete the firebase app because you are no longer using the intialized firebase app. 
     firebase_admin.delete_app(app)
+
+def get_summary_stats(df):
+    prices_dfs = []
+    df['Price/Night'] = df['Price/Night'].apply(lambda x : x.replace('Rp','').replace(',' , ''))
     
+    locations = ['Ubud, Bali', 'Canggu, Bali', 'Kuta, Bali', 'Seminyak, Bali']
+    for location in locations:
+        city_df = pd.DataFrame(df[df.Location == location]['Price/Night'])
+        city_df = city_df.astype(int)
+        city_desc = city_df.describe()
+        city_desc = city_desc['Price/Night'].apply(lambda x: format_currency(x, currency="IDR", locale="id_ID"))
+        city_desc.loc['count'] = int(city_desc.loc['count'].replace('Rp',"").replace(',',""))/100
+        city_desc['Location'] = location
+        prices_dfs.append(pd.DataFrame(city_desc))
+        
+    final_prices = pd.concat(prices_dfs,axis = 1)
+    final_prices.columns = ['Price/Night: Ubud', 'Price/Night: Canggu', 'Price/Night: Kuta', 'Price/Night: Seminyak']
+    return final_prices
+    
+def store_stats_firebase(df):
+    # Find the credential file to your firebase storage
+    cred = credentials.Certificate('rental-property-dataset-firebase-credentials.json')
+    
+    # Intializes a firebase app to perform crud operations on your firebase storage
+#     app = firebase_admin.initialize_app(cred)
+    
+    # Intializes the database object to add collections to your database
+    db = firestore.client()
+    
+    # Extracts summary stats from listings
+    data = df   
+    
+    # Convert all the values in the dataframe to strings because after scraping all the values are objects.
+    data = data.astype('string')
+    
+    # Convert all rows in the scraped df into seperate dictionaries, feel free to change the orientation 
+    data = data.to_dict(orient = 'index')
+    
+    # The for loop loops through all the dictionaries in the data list.
+    for key,value in data.items(): 
+        # Create a collection by passing a collection name. 
+        # Creates a unique identifier for each document from each property name in the dataset.
+        doc_ref = db.collection("Summary_Stats_Bali").document(key)
+        
+        # Adds all the data contained in the dictionaries from the data list.
+        doc_ref.set(value)
+    # Used a print statement to check if we successfully added the collection to our firebase storage.
+    print('Collection is sucessfully saved in firebase')
+    
+    # Delete the firebase app because you are no longer using the intialized firebase app. 
+    # If we keep the same firebase app running, it will lead to an intialized app error when we are running 
+    # the method multiple times. 
+#     firebase_admin.delete_app(app)
+
 def main():
-    store_df_firebase()
+    df = extract_all_listings()
+    store_df_firebase(df)
+    store_stats_firebase(stats_df)
