@@ -252,4 +252,5 @@ def store_stats_firebase(df):
 def main():
     df = extract_all_listings()
     store_df_firebase(df)
+    stats_df = get_summary_stats(df)
     store_stats_firebase(stats_df)
